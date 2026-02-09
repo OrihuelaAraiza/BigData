@@ -1,0 +1,58 @@
+services:
+  minio1:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio1
+    volumes:
+      - data1-1:/data
+    ports:
+      - "9001:9001"
+      - "9000:9000"
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    command: server http://minio{1...4}/data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 60s
+      timeout: 40s
+      retries: 4
+ 
+ 
+  minio2:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio2
+    volumes:
+      - data2-1:/data
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    command: server http://minio{1...4}/data --console-address ":9001"
+ 
+ 
+  minio3:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio3
+    volumes:
+      - data3-1:/data
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    command: server http://minio{1...4}/data --console-address ":9001"
+ 
+ 
+  minio4:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio4
+    volumes:
+      - data4-1:/data
+    environment:
+      MINIO_ROOT_USER: admin
+      MINIO_ROOT_PASSWORD: password123
+    command: server http://minio{1...4}/data --console-address ":9001"
+ 
+ 
+volumes:
+  data1-1:
+  data2-1:
+  data3-1:
+  data4-1:
