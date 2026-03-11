@@ -1,0 +1,327 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard de Camiones - Kafka Consumer</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #f0f2f5;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+        
+        .header p {
+            margin: 5px 0 0 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        
+        .container {
+            display: flex;
+            height: calc(100vh - 80px);
+        }
+        
+        #map {
+            flex: 1;
+            height: 100%;
+        }
+        
+        .sidebar {
+            width: 350px;
+            background: white;
+            overflow-y: auto;
+            box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+        }
+        
+        .sidebar-header {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        
+        .sidebar-header h2 {
+            font-size: 18px;
+            color: #333;
+            margin-bottom: 5px;
+        }
+        
+        .status {
+            display: inline-block;
+            padding: 4px 12px;
+            background: #4caf50;
+            color: white;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .truck-list {
+            padding: 10px;
+        }
+        
+        .truck-card {
+            background: white;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 10px;
+            transition: all 0.3s ease;
+        }
+        
+        .truck-card:hover {
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            transform: translateY(-2px);
+        }
+        
+        .truck-card.active {
+            border-color: #667eea;
+            box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.2);
+        }
+        
+        .truck-id {
+            font-size: 16px;
+            font-weight: bold;
+            color: #667eea;
+            margin-bottom: 8px;
+        }
+        
+        .truck-info {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 8px;
+            font-size: 13px;
+        }
+        
+        .info-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
+        
+        .info-label {
+            color: #666;
+            font-weight: 500;
+        }
+        
+        .info-value {
+            color: #333;
+            font-weight: 600;
+        }
+        
+        .temp-high {
+            color: #f44336;
+        }
+        
+        .temp-normal {
+            color: #4caf50;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: #999;
+        }
+        
+        .empty-state-icon {
+            font-size: 48px;
+            margin-bottom: 10px;
+        }
+        
+        /* Custom marker styles */
+        .truck-marker {
+            background: #667eea;
+            border: 3px solid white;
+            border-radius: 50%;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1>🚛 Dashboard de Monitoreo de Camiones</h1>
+        <p>Consumidor Kafka en tiempo real - Práctica de Ingesta de Datos</p>
+    </div>
+    
+    <div class="container">
+        <div id="map"></div>
+        
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2>Camiones Activos</h2>
+                <span class="status" id="connection-status">🔴 Conectando...</span>
+            </div>
+            
+            <div class="truck-list" id="truck-list">
+                <div class="empty-state">
+                    <div class="empty-state-icon">📡</div>
+                    <p>Esperando datos de camiones...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <!-- Socket.IO -->
+    <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
+    
+    <script>
+        // Inicializar el mapa centrado en Ciudad de México
+        const map = L.map('map').setView([19.4326, -99.1332], 11);
+        
+        // Agregar tiles de OpenStreetMap
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+        
+        // Almacenar marcadores de camiones
+        const truckMarkers = {};
+        const trucks = {};
+        
+        // Conectar a Socket.IO
+        const socket = io();
+        
+        socket.on('connect', function() {
+            console.log('✅ Conectado al servidor');
+            document.getElementById('connection-status').textContent = '🟢 Conectado';
+            document.getElementById('connection-status').style.background = '#4caf50';
+        });
+        
+        socket.on('disconnect', function() {
+            console.log('❌ Desconectado del servidor');
+            document.getElementById('connection-status').textContent = '🔴 Desconectado';
+            document.getElementById('connection-status').style.background = '#f44336';
+        });
+        
+        // Escuchar actualizaciones de camiones
+        socket.on('truck_update', function(data) {
+            console.log('📍 Actualización recibida:', data);
+            updateTruck(data);
+        });
+        
+        function updateTruck(data) {
+            const truckId = data.camion_id;
+            trucks[truckId] = data;
+            
+            // Actualizar o crear marcador en el mapa
+            if (truckMarkers[truckId]) {
+                truckMarkers[truckId].setLatLng([data.lat, data.lon]);
+                truckMarkers[truckId].setPopupContent(getPopupContent(data));
+            } else {
+                const marker = L.circleMarker([data.lat, data.lon], {
+                    radius: 10,
+                    fillColor: '#667eea',
+                    color: '#fff',
+                    weight: 2,
+                    opacity: 1,
+                    fillOpacity: 0.8
+                }).addTo(map);
+                
+                marker.bindPopup(getPopupContent(data));
+                truckMarkers[truckId] = marker;
+                
+                // Hacer zoom al primer camión
+                if (Object.keys(truckMarkers).length === 1) {
+                    map.setView([data.lat, data.lon], 13);
+                }
+            }
+            
+            // Actualizar la lista lateral
+            updateTruckList();
+        }
+        
+        function getPopupContent(data) {
+            const tempClass = data.temperatura > 100 ? 'temp-high' : 'temp-normal';
+            return `
+                <div style="min-width: 200px;">
+                    <h3 style="margin: 0 0 10px 0; color: #667eea;">${data.camion_id}</h3>
+                    <p style="margin: 5px 0;"><strong>Velocidad:</strong> ${data.velocidad} km/h</p>
+                    <p style="margin: 5px 0;"><strong>Temperatura:</strong> <span class="${tempClass}">${data.temperatura}°C</span></p>
+                    <p style="margin: 5px 0; font-size: 11px; color: #999;">
+                        ${new Date(data.timestamp * 1000).toLocaleString('es-MX')}
+                    </p>
+                </div>
+            `;
+        }
+        
+        function updateTruckList() {
+            const truckList = document.getElementById('truck-list');
+            const truckArray = Object.values(trucks);
+            
+            if (truckArray.length === 0) {
+                truckList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">📡</div>
+                        <p>Esperando datos de camiones...</p>
+                    </div>
+                `;
+                return;
+            }
+            
+            truckList.innerHTML = truckArray.map(truck => {
+                const tempClass = truck.temperatura > 100 ? 'temp-high' : 'temp-normal';
+                return `
+                    <div class="truck-card" onclick="focusTruck('${truck.camion_id}')">
+                        <div class="truck-id">${truck.camion_id}</div>
+                        <div class="truck-info">
+                            <div class="info-item">
+                                <span class="info-label">⚡ Velocidad:</span>
+                                <span class="info-value">${truck.velocidad} km/h</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">🌡️ Temp:</span>
+                                <span class="info-value ${tempClass}">${truck.temperatura}°C</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">📍 Lat:</span>
+                                <span class="info-value">${truck.lat.toFixed(4)}</span>
+                            </div>
+                            <div class="info-item">
+                                <span class="info-label">📍 Lon:</span>
+                                <span class="info-value">${truck.lon.toFixed(4)}</span>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function focusTruck(truckId) {
+            const marker = truckMarkers[truckId];
+            if (marker) {
+                map.setView(marker.getLatLng(), 14);
+                marker.openPopup();
+            }
+        }
+        
+        // Cargar datos iniciales
+        fetch('/api/trucks')
+            .then(response => response.json())
+            .then(data => {
+                data.forEach(truck => updateTruck(truck));
+            });
+    </script>
+</body>
+</html>

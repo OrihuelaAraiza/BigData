@@ -1,0 +1,44 @@
+--QUERY PARA CREAR TABLA DEFACTS EN CLICKHOUSE
+
+-- Tabla de Hechos (Fact Table)
+
+CREATE TABLE clase_olap.fact_ventas (
+    id_venta UInt64,
+    fecha Date,
+    id_producto UInt32,
+    cantidad UInt32,
+    total_venta Float64
+) ENGINE = MergeTree() 
+PARTITION BY toYYYYMM(fecha) 
+ORDER BY (fecha, id_producto);
+
+-- Dimensión Producto
+CREATE TABLE clase_olap.dim_productos (
+    id_producto UInt32,
+    nombre String,
+    categoria String,
+    precio Float32
+) ENGINE = ReplacingMergeTree() ORDER BY id_producto;
+
+
+INSERT INTO clase_olap.dim_productos (id_producto, nombre, categoria, precio) VALUES 
+(6, 'PROD-006', 'General', 0.0),
+(2, 'PROD-002', 'General', 0.0),
+(5, 'PROD-005', 'General', 0.0),
+(4, 'PROD-004', 'General', 0.0),
+(1, 'PROD-001', 'General', 0.0),
+(3, 'PROD-003', 'General', 0.0);
+
+
+
+
+
+clickhouse-client --query="INSERT INTO clase_olap.fact_ventas FORMAT Parquet" < part-*.parquet
+
+
+SELECT p.nombre, sum(v.cantidad) as total_vendido
+FROM clase_olap.fact_ventas v
+JOIN clase_olap.dim_productos p ON v.id_producto = p.id_producto
+GROUP BY p.nombre
+ORDER BY total_vendido DESC
+LIMIT 10
